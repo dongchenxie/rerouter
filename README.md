@@ -40,18 +40,36 @@ Makefile（可选）
 - `B_BASE_URL`：B 站根地址（必填），例：`https://b.example.com`
 - `LISTEN_ADDR`：监听地址，默认 `:8080`
 - `CACHE_DIR`：缓存目录，默认 `./cache`
+- `CACHE_ALL`：是否对所有路径缓存（仅当上游返回 200），默认 `true`
 - `CACHE_TTL_SECONDS`：缓存过期秒数，默认 `3600`
-- `CACHE_PATTERNS`：逗号分隔的路径匹配，支持 `*`，默认 `/sitemap.xml,/blog/*,/products/*`
+- `CACHE_PATTERNS`：逗号分隔的路径匹配，支持 `*`。当 `CACHE_ALL=false` 时，只有匹配的路径会被缓存。默认 `/sitemap.xml,/blog/*,/products/*`
 - `REDIRECT_STATUS`：真人跳转状态码，默认 `302`（可设为 `307`）
 - `CONFIG_PATH`：可选，JSON 配置文件路径，默认 `./config.json`（示例见 `config.sample.json`）
+- `ADMIN_TOKEN`：管理接口令牌，必须设置后才可使用清缓存接口。
 
 行为说明
 
 - 爬虫识别：基于常见 UA 关键字（Googlebot/Bingbot/Baiduspider 等）。可在请求头加 `X-Bot: true` 做联调测试。
-- 缓存策略：仅对 GET/HEAD 且匹配 `CACHE_PATTERNS` 的路径缓存。缓存内容为最小头部集（Content-Type/Last-Modified/ETag）与 Body。
+- 缓存策略：默认对所有 GET/HEAD 的 bot 请求尝试缓存，且仅当上游返回 200 时写入缓存（TTL 可配置）。缓存内容为最小头部集（Content-Type/Last-Modified/ETag）与 Body。若将 `CACHE_ALL=false`，则仅对 `CACHE_PATTERNS` 匹配的路径缓存。
 - 机器访问透传：不在缓存范围内的爬虫请求将直接抓取 B 站并返回（不缓存）。
 - `robots.txt`：A 站内置 `Allow: /`，确保可抓取。
 - 健康检查：`/healthz` 返回 `ok`。
+
+清理缓存（管理接口）
+
+- 需先设置环境变量 `ADMIN_TOKEN`。
+- 端点：`POST /admin/purge`
+  - 认证：`X-Admin-Token: <ADMIN_TOKEN>`（或 `?token=<ADMIN_TOKEN>`）
+  - 参数：
+    - `url` 或 `q`：
+      - 绝对 URL（如 `https://b.com/path`）→ 精确删除该条缓存。
+      - 相对路径（如 `/path`）→ 自动映射到 `B_BASE_URL` 后再精确删除。
+      - 部分/模糊匹配：加上 `partial=1` 或 `partial=true`，按子串匹配删除所有命中项。
+  - 返回：`{"deleted": <数量>, "files": ["<删除的缓存文件>", ...]}`
+
+.env 文件
+
+- 复制 `.env-example` 为 `.env` 并按需修改（`.env` 已加入 `.gitignore`）。
 
 例子（Nginx/域名）
 

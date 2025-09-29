@@ -16,6 +16,8 @@ import (
     "strings"
     "time"
 )
+// Auto-load .env from project root if present (minimal, clean)
+import _ "github.com/joho/godotenv/autoload"
 
 type Config struct {
     // Base URL for B site, e.g. https://b.example.com
@@ -32,6 +34,8 @@ type Config struct {
     CachePatterns []string `json:"cache_patterns"`
     // HTTP status code used to redirect humans (302 or 307 recommended)
     RedirectStatus int `json:"redirect_status"`
+    // Admin token required to call admin endpoints like purge
+    AdminToken string `json:"admin_token"`
 }
 
 type cacheEntry struct {
@@ -97,6 +101,9 @@ func loadConfig() (*Config, error) {
         if n >= 300 && n < 400 {
             cfg.RedirectStatus = n
         }
+    }
+    if v := os.Getenv("ADMIN_TOKEN"); v != "" {
+        cfg.AdminToken = v
     }
 
     // Optional JSON config file path
@@ -260,28 +267,118 @@ func serveFromCache(w http.ResponseWriter, ce *cacheEntry) {
     }
 }
 
-func main() {
-    cfg, err := loadConfig()
-    if err != nil {
-        log.Fatalf("config error: %v", err)
-    }
-
-    log.Printf("Starting A-site on %s, proxying bots from %s", cfg.ListenAddr, cfg.BBaseURL)
-
+func buildHandler(cfg *Config) http.Handler {
     client := &http.Client{Timeout: 15 * time.Second}
+    mux := http.NewServeMux()
 
-    http.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+    mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Content-Type", "text/plain; charset=utf-8")
         w.WriteHeader(http.StatusOK)
         _, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
     })
 
-    http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+    mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
         w.WriteHeader(http.StatusOK)
         _, _ = w.Write([]byte("ok"))
     })
 
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+    // Admin purge endpoint: POST/DELETE /admin/purge?url=...&partial=1
+    mux.HandleFunc("/admin/purge", func(w http.ResponseWriter, r *http.Request) {
+        if cfg.AdminToken == "" {
+            http.Error(w, "admin disabled: set ADMIN_TOKEN", http.StatusForbidden)
+            return
+        }
+        token := r.Header.Get("X-Admin-Token")
+        if token == "" {
+            token = r.URL.Query().Get("token")
+        }
+        if token != cfg.AdminToken {
+            http.Error(w, "forbidden", http.StatusForbidden)
+            return
+        }
+
+        if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+            return
+        }
+        _ = r.ParseForm()
+        q := r.FormValue("url")
+        if q == "" {
+            q = r.FormValue("q")
+        }
+        partial := r.FormValue("partial") == "1" || strings.ToLower(r.FormValue("partial")) == "true"
+        // Support JSON body: {"url":"...","partial":true}
+        if q == "" && strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+            var body struct {
+                URL     string `json:"url"`
+                Partial bool   `json:"partial"`
+            }
+            b, _ := io.ReadAll(r.Body)
+            _ = json.Unmarshal(b, &body)
+            q = body.URL
+            partial = partial || body.Partial
+        }
+        if q == "" {
+            http.Error(w, "missing url", http.StatusBadRequest)
+            return
+        }
+
+        // If q is a path, convert to absolute on B-site
+        fullURL := q
+        if u, err := url.Parse(q); err == nil {
+            if u.Scheme == "" { // treat as path
+                if !strings.HasPrefix(q, "/") {
+                    q = "/" + q
+                }
+                fullURL = strings.TrimRight(cfg.BBaseURL, "/") + q
+            }
+        }
+
+        type result struct {
+            Deleted int      `json:"deleted"`
+            Files   []string `json:"files"`
+        }
+        res := result{}
+
+        if !partial {
+            key := cacheKey(fullURL)
+            p := cachePath(cfg.CacheDir, key)
+            if _, err := os.Stat(p); err == nil {
+                if err := os.Remove(p); err == nil {
+                    res.Deleted = 1
+                    res.Files = append(res.Files, filepath.Base(p))
+                }
+            }
+        } else {
+            // Partial substring match over cached entries' URLs
+            entries, _ := os.ReadDir(cfg.CacheDir)
+            for _, e := range entries {
+                if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+                    continue
+                }
+                p := filepath.Join(cfg.CacheDir, e.Name())
+                b, err := os.ReadFile(p)
+                if err != nil {
+                    continue
+                }
+                var ce cacheEntry
+                if err := json.Unmarshal(b, &ce); err != nil {
+                    continue
+                }
+                if strings.Contains(ce.URL, q) || strings.Contains(ce.URL, fullURL) {
+                    if err := os.Remove(p); err == nil {
+                        res.Deleted++
+                        res.Files = append(res.Files, e.Name())
+                    }
+                }
+            }
+        }
+
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(res)
+    })
+
+    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
         // Build target URL on B-site
         target := strings.TrimRight(cfg.BBaseURL, "/") + r.URL.RequestURI()
 
@@ -375,11 +472,22 @@ func main() {
         }
     })
 
+    return mux
+}
+
+func main() {
+    cfg, err := loadConfig()
+    if err != nil {
+        log.Fatalf("config error: %v", err)
+    }
     if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
         log.Fatalf("failed to create cache dir: %v", err)
     }
 
-    srv := &http.Server{Addr: cfg.ListenAddr}
+    log.Printf("Starting A-site on %s, proxying bots from %s", cfg.ListenAddr, cfg.BBaseURL)
+
+    handler := buildHandler(cfg)
+    srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler}
     if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
         log.Fatalf("server error: %v", err)
     }
