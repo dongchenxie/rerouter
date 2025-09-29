@@ -38,6 +38,7 @@ Makefile（可选）
 配置（环境变量优先，亦可用 `config.json`）
 
 - `B_BASE_URL`：B 站根地址（必填），例：`https://b.example.com`
+- `A_BASE_URL`：A 站对外域名（用于爬虫页面中的链接重写）。可不填，不填则根据请求的 `Host` 与 `X-Forwarded-Proto` 自动推导。
 - `LISTEN_ADDR`：监听地址，默认 `:8080`
 - `CACHE_DIR`：缓存目录，默认 `./cache`
 - `CACHE_ALL`：是否对所有路径缓存（仅当上游返回 200），默认 `true`
@@ -51,6 +52,17 @@ Makefile（可选）
 
 - 爬虫识别：基于常见 UA 关键字（Googlebot/Bingbot/Baiduspider 等）。可在请求头加 `X-Bot: true` 做联调测试。
 - 缓存策略：默认对所有 GET/HEAD 的 bot 请求尝试缓存，且仅当上游返回 200 时写入缓存（TTL 可配置）。缓存内容为最小头部集（Content-Type/Last-Modified/ETag）与 Body。若将 `CACHE_ALL=false`，则仅对 `CACHE_PATTERNS` 匹配的路径缓存。
+- 链接重写（仅对爬虫返回的页面）：当上游返回 HTML 时，会将页面内指向 B 站域名的绝对链接（含协议或协议相对 `//`）重写为 A 站域名。若设置了 `A_BASE_URL`，以其为准；否则根据请求推导（`Host`、`X-Forwarded-Proto`）。为避免不一致，重写后不会透传上游的 `ETag`/`Last-Modified`。
+
+缓存目录结构（新版）
+
+- 顶层为上游域名，其下按路径分层存放，文件均为 JSON：
+  - 无查询：`<CACHE_DIR>/<host>/<path>/index.json`
+  - 有查询：`<CACHE_DIR>/<host>/<path>/index.<短哈希>.json`（按完整 `RequestURI` 生成短哈希，避免冲突）
+- 示例：
+  - `https://b.com/` → `cache/b.com/index.json`
+  - `https://b.com/blog/post` → `cache/b.com/blog/post/index.json`
+  - `https://b.com/search?q=go` → `cache/b.com/search/index.<hash>.json`
 - 机器访问透传：不在缓存范围内的爬虫请求将直接抓取 B 站并返回（不缓存）。
 - `robots.txt`：A 站内置 `Allow: /`，确保可抓取。
 - 健康检查：`/healthz` 返回 `ok`。

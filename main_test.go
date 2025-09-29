@@ -10,6 +10,7 @@ import (
     "strings"
     "sync/atomic"
     "testing"
+    "time"
 )
 
 func newTestCfg(t *testing.T, bURL string) *Config {
@@ -38,9 +39,11 @@ func TestHumanRedirects(t *testing.T) {
     srv := httptest.NewServer(h)
     defer srv.Close()
 
+    // Do not follow redirects so we can assert status code
+    client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
     req, _ := http.NewRequest("GET", srv.URL+"/foo?x=1", nil)
     req.Header.Set("User-Agent", "Mozilla/5.0")
-    resp, err := http.DefaultClient.Do(req)
+    resp, err := client.Do(req)
     if err != nil { t.Fatal(err) }
     defer resp.Body.Close()
     if resp.StatusCode != cfg.RedirectStatus {
@@ -85,6 +88,44 @@ func TestBotCaches200(t *testing.T) {
     }
 }
 
+func TestHumanPrefetchWarmsCache(t *testing.T) {
+    // Upstream serves simple page but we won't fetch inline; prefetcher should warm
+    upCalls := int32(0)
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        atomic.AddInt32(&upCalls, 1)
+        w.Header().Set("Content-Type", "text/html")
+        io.WriteString(w, "<html><body>ok</body></html>")
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    // Human request triggers redirect and background prefetch
+    client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+    r, err := client.Get(srv.URL + "/warm/me?x=1")
+    if err != nil { t.Fatal(err) }
+    r.Body.Close()
+    if r.StatusCode < 300 || r.StatusCode >= 400 { t.Fatalf("expected redirect, got %d", r.StatusCode) }
+
+    // Wait briefly for prefetch
+    target := strings.TrimRight(cfg.BBaseURL, "/") + "/warm/me?x=1"
+    var ok bool
+    for i := 0; i < 50; i++ { // up to ~1s
+        p, _ := cacheFilePathForURL(cfg.CacheDir, target)
+        if _, err := os.Stat(p); err == nil {
+            ok = true
+            break
+        }
+        time.Sleep(20 * time.Millisecond)
+    }
+    if !ok {
+        t.Fatalf("expected cache warmed in background for %s", target)
+    }
+}
+
 func TestBotDoesNotCacheNon200(t *testing.T) {
     var calls int32
     up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,8 +154,7 @@ func TestBotDoesNotCacheNon200(t *testing.T) {
 
     // Ensure no cache file exists
     target := strings.TrimRight(cfg.BBaseURL, "/") + "/nope"
-    key := cacheKey(target)
-    p := cachePath(cfg.CacheDir, key)
+    p, _ := cacheFilePathForURL(cfg.CacheDir, target)
     if _, err := os.Stat(p); err == nil {
         t.Fatalf("expected no cache file, but found %s", p)
     }
@@ -154,8 +194,8 @@ func TestPurgeExactAndPartial(t *testing.T) {
     json.NewDecoder(pr.Body).Decode(&res1)
     pr.Body.Close()
 
-    key1 := cacheKey(target1)
-    if _, err := os.Stat(cachePath(cfg.CacheDir, key1)); !os.IsNotExist(err) {
+    p1, _ := cacheFilePathForURL(cfg.CacheDir, target1)
+    if _, err := os.Stat(p1); !os.IsNotExist(err) {
         t.Fatalf("expected page1 cache removed")
     }
 
@@ -199,3 +239,29 @@ func TestAdminAuthRequired(t *testing.T) {
     }
 }
 
+func TestCacheFilePathForURL(t *testing.T) {
+    dir := t.TempDir()
+    cases := []struct{
+        raw string
+        want string
+        suffix string
+    }{
+        {"https://b.com/", filepath.Join(dir, "b.com", "index.json"), ""},
+        {"https://b.com/foo", filepath.Join(dir, "b.com", "foo", "index.json"), ""},
+        {"https://b.com/foo/bar/", filepath.Join(dir, "b.com", "foo", "bar", "index.json"), ""},
+    }
+    for _, c := range cases {
+        got, err := cacheFilePathForURL(dir, c.raw)
+        if err != nil { t.Fatalf("unexpected error: %v", err) }
+        if got != c.want {
+            t.Fatalf("for %s want %s got %s", c.raw, c.want, got)
+        }
+    }
+    // Query variants should differ
+    p1, _ := cacheFilePathForURL(dir, "https://b.com/foo?q=1")
+    p2, _ := cacheFilePathForURL(dir, "https://b.com/foo?q=2")
+    if filepath.Dir(p1) != filepath.Join(dir, "b.com", "foo") { t.Fatalf("unexpected dir: %s", filepath.Dir(p1)) }
+    if p1 == p2 { t.Fatalf("expected different file names for different queries: %s == %s", p1, p2) }
+    pNoQ, _ := cacheFilePathForURL(dir, "https://b.com/foo")
+    if filepath.Base(pNoQ) != "index.json" { t.Fatalf("expected index.json for no-query, got %s", filepath.Base(pNoQ)) }
+}
