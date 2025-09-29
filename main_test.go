@@ -11,6 +11,7 @@ import (
     "sync/atomic"
     "testing"
     "time"
+    "net/url"
 )
 
 func newTestCfg(t *testing.T, bURL string) *Config {
@@ -264,4 +265,89 @@ func TestCacheFilePathForURL(t *testing.T) {
     if p1 == p2 { t.Fatalf("expected different file names for different queries: %s == %s", p1, p2) }
     pNoQ, _ := cacheFilePathForURL(dir, "https://b.com/foo")
     if filepath.Base(pNoQ) != "index.json" { t.Fatalf("expected index.json for no-query, got %s", filepath.Base(pNoQ)) }
+}
+
+func TestRobotsTxtFetchedAndRewritten(t *testing.T) {
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "text/plain")
+        // Use upstream host in content so rewrite can match
+        io.WriteString(w, "User-agent: *\nAllow: /\nSitemap: https://"+r.Host+"/real-sitemap.xml\n")
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    r, err := http.Get(srv.URL + "/robots.txt")
+    if err != nil { t.Fatal(err) }
+    b, _ := io.ReadAll(r.Body)
+    r.Body.Close()
+    if r.StatusCode != 200 { t.Fatalf("expected 200, got %d", r.StatusCode) }
+    sb := string(b)
+    u, _ := url.Parse(srv.URL)
+    if !strings.Contains(sb, u.Host) {
+        t.Fatalf("expected robots to contain A-site host %s, got: %s", u.Host, sb)
+    }
+}
+
+func TestSitemapRewriteForBots(t *testing.T) {
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/xml")
+        sitemap := "<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\n" +
+            "<urlset xmlns=\\\"http://www.sitemaps.org/schemas/sitemap/0.9\\\">\n" +
+            "  <url><loc>https://" + r.Host + "/blog/post1</loc></url>\n" +
+            "  <url><loc>https://" + r.Host + "/blog/post2</loc></url>\n" +
+            "</urlset>"
+        io.WriteString(w, sitemap)
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    req, _ := http.NewRequest("GET", srv.URL+"/sitemap.xml", nil)
+    req.Header.Set("User-Agent", "Googlebot")
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil { t.Fatal(err) }
+    b, _ := io.ReadAll(resp.Body)
+    resp.Body.Close()
+    if resp.StatusCode != 200 { t.Fatalf("expected 200, got %d", resp.StatusCode) }
+    sb := string(b)
+    au, _ := url.Parse(srv.URL)
+    if !strings.Contains(sb, au.Host) {
+        t.Fatalf("expected sitemap URLs rewritten to A-site host %s, got: %s", au.Host, sb)
+    }
+}
+
+func TestHumanGetsSitemapOnAWithoutRedirect(t *testing.T) {
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/xml")
+        io.WriteString(w, "<urlset><url><loc>https://"+r.Host+"/wp-post</loc></url></urlset>")
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    // Human UA (not a bot). Should not redirect for sitemap path
+    req, _ := http.NewRequest("GET", srv.URL+"/wp-sitemap.xml", nil)
+    req.Header.Set("User-Agent", "Mozilla/5.0")
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil { t.Fatal(err) }
+    b, _ := io.ReadAll(resp.Body)
+    resp.Body.Close()
+    if resp.StatusCode != 200 {
+        t.Fatalf("expected 200, got %d", resp.StatusCode)
+    }
+    // Ensure content host is rewritten to A-site
+    au, _ := url.Parse(srv.URL)
+    if !strings.Contains(string(b), au.Host) {
+        t.Fatalf("expected sitemap URLs rewritten to A host %s, got: %s", au.Host, string(b))
+    }
 }

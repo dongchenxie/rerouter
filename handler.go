@@ -20,9 +20,48 @@ func buildHandler(cfg *Config) http.Handler {
     mux := http.NewServeMux()
 
     mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-        w.WriteHeader(http.StatusOK)
-        _, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+        target := strings.TrimRight(cfg.BBaseURL, "/") + "/robots.txt"
+        if ce, err := readCacheByURL(cfg.CacheDir, target); err == nil && ce.Status == http.StatusOK {
+            // Re-rewrite with current A if needed
+            aURL := deriveABaseURL(cfg, r)
+            bURL, _ := url.Parse(cfg.BBaseURL)
+            body := ce.Body
+            if nb, rw := rewriteBToA(body, aURL, bURL); rw {
+                // Drop validators if present
+                w.Header().Set("Content-Type", ce.Header["Content-Type"])
+                w.WriteHeader(ce.Status)
+                _, _ = w.Write(nb)
+                return
+            }
+            serveFromCache(w, ce)
+            return
+        }
+        req, _ := http.NewRequest(http.MethodGet, target, nil)
+        req.Header.Set("User-Agent", r.UserAgent())
+        resp, err := client.Do(req)
+        if err != nil {
+            http.Error(w, "upstream fetch error", http.StatusBadGateway)
+            return
+        }
+        defer resp.Body.Close()
+        body, _ := io.ReadAll(resp.Body)
+        ct := resp.Header.Get("Content-Type")
+        if ct == "" { ct = "text/plain; charset=utf-8" }
+        aURL := deriveABaseURL(cfg, r)
+        bURL, _ := url.Parse(cfg.BBaseURL)
+        body, rewrote := rewriteBToA(body, aURL, bURL)
+        headers := map[string]string{"Content-Type": ct}
+        if !rewrote {
+            if v := resp.Header.Get("Last-Modified"); v != "" { headers["Last-Modified"] = v }
+            if v := resp.Header.Get("ETag"); v != "" { headers["ETag"] = v }
+        }
+        if resp.StatusCode == http.StatusOK {
+            ce := &cacheEntry{URL: target, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Duration(cfg.CacheTTLSeconds)*time.Second).Unix(), Status: resp.StatusCode, Header: headers, Body: body}
+            _ = writeCacheByURL(cfg.CacheDir, target, ce)
+        }
+        for k, v := range headers { w.Header().Set(k, v) }
+        w.WriteHeader(resp.StatusCode)
+        if len(body) > 0 { _, _ = w.Write(body) }
     })
 
     mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -125,8 +164,8 @@ func buildHandler(cfg *Config) http.Handler {
         // Build target URL on B-site
         target := strings.TrimRight(cfg.BBaseURL, "/") + r.URL.RequestURI()
 
-        // If human, redirect directly to B-site
-        if !isBot(r) {
+        // If human, redirect directly to B-site unless this is a sitemap path
+        if !isBot(r) && !isSitemapPath(r.URL.Path) {
             // Warm cache asynchronously (non-blocking)
             a := deriveABaseURL(cfg, r)
             pf.Enqueue(target, a.String())
@@ -139,6 +178,19 @@ func buildHandler(cfg *Config) http.Handler {
         allowCache := cfg.CacheAll || patternsMatch(cfg.CachePatterns, r.URL.Path)
         if methodCacheable && allowCache {
             if ce, err := readCacheByURL(cfg.CacheDir, target); err == nil && ce.Status == http.StatusOK {
+                if isSitemapPath(r.URL.Path) {
+                    // Ensure sitemap content is rewritten even if cache is from older version
+                    aURL := deriveABaseURL(cfg, r)
+                    bURL, _ := url.Parse(cfg.BBaseURL)
+                    body := ce.Body
+                    if nb, rw := rewriteBToA(body, aURL, bURL); rw {
+                        // Copy content-type only
+                        if v := ce.Header["Content-Type"]; v != "" { w.Header().Set("Content-Type", v) }
+                        w.WriteHeader(ce.Status)
+                        _, _ = w.Write(nb)
+                        return
+                    }
+                }
                 serveFromCache(w, ce)
                 return
             }
@@ -171,15 +223,21 @@ func buildHandler(cfg *Config) http.Handler {
                 ch["ETag"] = et
             }
 
-            // Rewrite body links from B -> A for bots (HTML only)
+            // Rewrite body links from B -> A for bots (HTML/XML), force for sitemap
             aURL := deriveABaseURL(cfg, r)
             bURL, _ := url.Parse(cfg.BBaseURL)
-            newBody, rewrote := rewriteBodyForBots(body, ch["Content-Type"], aURL, bURL)
-            if rewrote {
-                body = newBody
-                // Upstream validators no longer valid after mutation
-                delete(ch, "ETag")
-                delete(ch, "Last-Modified")
+            if strings.Contains(strings.ToLower(r.URL.Path), "sitemap") {
+                if nb, rw := rewriteBToA(body, aURL, bURL); rw {
+                    body = nb
+                    delete(ch, "ETag")
+                    delete(ch, "Last-Modified")
+                }
+            } else {
+                if nb, rw := rewriteBodyForBots(body, ch["Content-Type"], aURL, bURL); rw {
+                    body = nb
+                    delete(ch, "ETag")
+                    delete(ch, "Last-Modified")
+                }
             }
 
             if resp.StatusCode == http.StatusOK {
@@ -226,7 +284,12 @@ func buildHandler(cfg *Config) http.Handler {
         ct := resp.Header.Get("Content-Type")
         aURL := deriveABaseURL(cfg, r)
         bURL, _ := url.Parse(cfg.BBaseURL)
-        body, rewrote := rewriteBodyForBots(body, ct, aURL, bURL)
+        rewrote := false
+        if strings.Contains(strings.ToLower(r.URL.Path), "sitemap") {
+            if nb, rw := rewriteBToA(body, aURL, bURL); rw { body = nb; rewrote = true }
+        } else {
+            if nb, rw := rewriteBodyForBots(body, ct, aURL, bURL); rw { body = nb; rewrote = true }
+        }
 
         // Copy minimal headers, but drop validators if rewritten
         if v := ct; v != "" { w.Header().Set("Content-Type", v) }

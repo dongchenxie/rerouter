@@ -53,3 +53,8 @@ func patternsMatch(patterns []string, reqPath string) bool {
     return false
 }
 
+// isSitemapPath returns true if the requested path looks like a sitemap.
+func isSitemapPath(p string) bool {
+    lp := strings.ToLower(p)
+    return strings.Contains(lp, "sitemap")
+}

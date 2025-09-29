@@ -29,9 +29,15 @@ func deriveABaseURL(cfg *Config, r *http.Request) *url.URL {
 // rewriteBodyForBots replaces absolute URLs pointing to B-site with A-site in HTML-like content.
 func rewriteBodyForBots(body []byte, contentType string, aBase, bBase *url.URL) (out []byte, rewrote bool) {
     ct := strings.ToLower(contentType)
-    if !(strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")) {
+    // Rewrite HTML, XHTML, and XML content (sitemap/feeds)
+    if !(strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") || strings.Contains(ct, "xml")) {
         return body, false
     }
+    return rewriteBToA(body, aBase, bBase)
+}
+
+// rewriteBToA performs URL host replacement regardless of content type.
+func rewriteBToA(body []byte, aBase, bBase *url.URL) ([]byte, bool) {
     aHost := aBase.Host
     bHost := bBase.Host
     aAbs := aBase.Scheme + "://" + aHost
@@ -49,4 +55,3 @@ func rewriteBodyForBots(body []byte, contentType string, aBase, bBase *url.URL) 
     }
     return body, false
 }
-

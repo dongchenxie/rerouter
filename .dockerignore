@@ -8,5 +8,5 @@ Dockerfile.dev
 docker-compose.dev.yml
 docker-compose.prod.yml
 scripts
+!scripts/entrypoint.sh
 config.sample.json
-

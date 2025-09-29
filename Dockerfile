@@ -9,12 +9,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags='-s -w -extldflags "-static"' -o /out/a-site .
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 app
-USER app
+RUN apk add --no-cache ca-certificates tzdata su-exec && adduser -D -H -u 10001 app \
+    && mkdir -p /app/cache \
+    && chown -R app:app /app
 WORKDIR /app
 COPY --from=builder /out/a-site /app/a-site
-COPY config.sample.json /app/config.sample.json
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 ENV LISTEN_ADDR=:8080
 EXPOSE 8080
-ENTRYPOINT ["/app/a-site"]
-
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/app/a-site"]

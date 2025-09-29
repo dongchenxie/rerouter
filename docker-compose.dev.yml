@@ -7,18 +7,12 @@ services:
     image: a-site-dev:latest
     ports:
       - "8080:8080"
-    environment:
-      - B_BASE_URL=${B_BASE_URL}
-      - LISTEN_ADDR=:8080
-      - CACHE_DIR=/app/cache
-      - CACHE_ALL=${CACHE_ALL:-true}
-      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-3600}
-      - CACHE_PATTERNS=${CACHE_PATTERNS:-/sitemap.xml,/blog/*,/products/*}
-      - REDIRECT_STATUS=${REDIRECT_STATUS:-302}
+    env_file:
+      - .env
     volumes:
       - ./:/app
-      - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/root/.cache/go-build
+      - ./dev-cache:/go/pkg/mod
+      - ./dev-build-cache:/root/.cache/go-build
     restart: unless-stopped
 
 volumes:
