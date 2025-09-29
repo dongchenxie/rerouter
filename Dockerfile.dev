@@ -1,0 +1,10 @@
+FROM golang:1.22-alpine
+WORKDIR /app
+RUN apk add --no-cache git bash curl ca-certificates tzdata && \
+    go install github.com/air-verse/air@latest
+COPY go.mod ./
+COPY . .
+ENV LISTEN_ADDR=:8080
+EXPOSE 8080
+CMD ["/root/go/bin/air", "-c", ".air.toml"]
+

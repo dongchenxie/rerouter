@@ -1,0 +1,12 @@
+cache
+tmp
+.git
+.gitignore
+README.md
+.air.toml
+Dockerfile.dev
+docker-compose.dev.yml
+docker-compose.prod.yml
+scripts
+config.sample.json
+

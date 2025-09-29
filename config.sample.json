@@ -1,0 +1,9 @@
+{
+  "b_base_url": "https://your-b-site.example.com",
+  "listen_addr": ":8080",
+  "cache_dir": "./cache",
+  "cache_ttl_seconds": 3600,
+  "cache_patterns": ["/sitemap.xml", "/blog/*", "/products/*"],
+  "redirect_status": 302
+}
+
