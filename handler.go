@@ -74,6 +74,7 @@ func buildHandler(cfg *Config) http.Handler {
             if nb, rw := rewriteBToA(body, aURL, bURL); rw {
                 // Drop validators if present
                 w.Header().Set("X-Cache", "HIT")
+                setCacheMetaHeaders(w, ce)
                 w.Header().Set("Content-Type", ce.Header["Content-Type"])
                 w.WriteHeader(ce.Status)
                 _, _ = w.Write(nb)
@@ -237,6 +238,7 @@ func buildHandler(cfg *Config) http.Handler {
                     if nb, rw := rewriteBToA(body, aURL, bURL); rw {
                         // Copy content-type only
                         w.Header().Set("X-Cache", "HIT")
+                        setCacheMetaHeaders(w, ce)
                         if v := ce.Header["Content-Type"]; v != "" { w.Header().Set("Content-Type", v) }
                         w.WriteHeader(ce.Status)
                         _, _ = w.Write(nb)
