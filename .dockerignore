@@ -1,5 +1,6 @@
 cache
 tmp
+logs
 .git
 .gitignore
 README.md

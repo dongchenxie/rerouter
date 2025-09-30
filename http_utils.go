@@ -18,6 +18,7 @@ func copyImportantHeaders(dst http.ResponseWriter, src *http.Response) {
 }
 
 func serveFromCache(w http.ResponseWriter, ce *cacheEntry) {
+    w.Header().Set("X-Cache", "HIT")
     for k, v := range ce.Header {
         w.Header().Set(k, v)
     }
@@ -26,4 +27,3 @@ func serveFromCache(w http.ResponseWriter, ce *cacheEntry) {
         _, _ = w.Write(ce.Body)
     }
 }
-

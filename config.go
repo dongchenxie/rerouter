@@ -1,6 +1,8 @@
 package main
 
 import (
+    "crypto/sha256"
+    "encoding/hex"
     "encoding/json"
     "errors"
     "fmt"
@@ -28,6 +30,18 @@ type Config struct {
     RedirectStatus int `json:"redirect_status"`
     // Admin token required to call admin endpoints like purge
     AdminToken string `json:"admin_token"`
+    // Admin purge UI path (long hashed). If empty, derived from AdminToken.
+    AdminUIPath string `json:"admin_ui_path"`
+    // Log level: debug, info, warn, error
+    LogLevel string `json:"log_level"`
+    // Log file path. If empty, file logging disabled.
+    LogFile string `json:"log_file"`
+    // Log rotation settings
+    LogMaxSizeMB int `json:"log_max_size_mb"`
+    LogMaxBackups int `json:"log_max_backups"`
+    LogMaxAgeDays int `json:"log_max_age_days"`
+    // Interval to log system metrics (seconds). 0 disables.
+    MetricsIntervalSeconds int `json:"metrics_interval_seconds"`
 }
 
 func getenv(key, def string) string {
@@ -47,6 +61,12 @@ func loadConfig() (*Config, error) {
         CacheAll:        true,
         CachePatterns:   []string{"/sitemap.xml", "/blog/*", "/products/*"},
         RedirectStatus:  302,
+        LogLevel:        getenv("LOG_LEVEL", "info"),
+        LogFile:         getenv("LOG_FILE", "./logs/a-site.log"),
+        LogMaxSizeMB:    10,
+        LogMaxBackups:   5,
+        LogMaxAgeDays:   7,
+        MetricsIntervalSeconds: 60,
     }
 
     if v := os.Getenv("CACHE_TTL_SECONDS"); v != "" {
@@ -86,6 +106,26 @@ func loadConfig() (*Config, error) {
             cfg.RedirectStatus = n
         }
     }
+    if v := os.Getenv("METRICS_INTERVAL_SECONDS"); v != "" {
+        var n int
+        fmt.Sscanf(v, "%d", &n)
+        if n >= 0 { cfg.MetricsIntervalSeconds = n }
+    }
+    if v := os.Getenv("LOG_MAX_SIZE_MB"); v != "" {
+        var n int
+        fmt.Sscanf(v, "%d", &n)
+        if n > 0 { cfg.LogMaxSizeMB = n }
+    }
+    if v := os.Getenv("LOG_MAX_BACKUPS"); v != "" {
+        var n int
+        fmt.Sscanf(v, "%d", &n)
+        if n >= 0 { cfg.LogMaxBackups = n }
+    }
+    if v := os.Getenv("LOG_MAX_AGE_DAYS"); v != "" {
+        var n int
+        fmt.Sscanf(v, "%d", &n)
+        if n >= 0 { cfg.LogMaxAgeDays = n }
+    }
     if v := os.Getenv("ADMIN_TOKEN"); v != "" {
         cfg.AdminToken = v
     }
@@ -100,6 +140,15 @@ func loadConfig() (*Config, error) {
             return nil, fmt.Errorf("parse config.json: %w", err)
         }
         mergeConfig(cfg, (*Config)(fileCfg))
+    }
+
+    // Admin UI path: env overrides file; if still empty, derive from token
+    if v := getenv("ADMIN_UI_PATH", ""); v != "" {
+        if strings.HasPrefix(v, "/") { cfg.AdminUIPath = v } else { cfg.AdminUIPath = "/" + v }
+    }
+    if cfg.AdminUIPath == "" && cfg.AdminToken != "" {
+        sum := sha256.Sum256([]byte(cfg.AdminToken + "::rerouter-admin-ui"))
+        cfg.AdminUIPath = "/admin/" + hex.EncodeToString(sum[:])[:48]
     }
 
     if cfg.BBaseURL == "" {
@@ -144,5 +193,11 @@ func mergeConfig(dst, src *Config) {
     if src.RedirectStatus != 0 {
         dst.RedirectStatus = src.RedirectStatus
     }
+    if src.LogLevel != "" { dst.LogLevel = src.LogLevel }
+    if src.LogFile != "" { dst.LogFile = src.LogFile }
+    if src.LogMaxSizeMB != 0 { dst.LogMaxSizeMB = src.LogMaxSizeMB }
+    if src.LogMaxBackups != 0 { dst.LogMaxBackups = src.LogMaxBackups }
+    if src.LogMaxAgeDays != 0 { dst.LogMaxAgeDays = src.LogMaxAgeDays }
+    if src.MetricsIntervalSeconds != 0 { dst.MetricsIntervalSeconds = src.MetricsIntervalSeconds }
+    if src.AdminUIPath != "" { dst.AdminUIPath = src.AdminUIPath }
 }
-

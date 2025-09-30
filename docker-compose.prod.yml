@@ -10,6 +10,7 @@ services:
       - .env
     volumes:
       - ./cache:/app/cache
+      - ./logs:/app/logs
     restart: unless-stopped
 
 volumes: {}
