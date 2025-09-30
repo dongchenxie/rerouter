@@ -218,6 +218,115 @@ func TestPurgeExactAndPartial(t *testing.T) {
     }
 }
 
+func TestCacheTTLRulesApplied(t *testing.T) {
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "text/html")
+        io.WriteString(w, "<html><body>ok</body></html>")
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    cfg.CacheTTLSeconds = 3600
+    cfg.CacheTTLRules = []TTLRule{
+        {Pattern: "/blog/*", TTLSeconds: 10},
+        {Pattern: "/products/*", TTLSeconds: 20},
+    }
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    client := &http.Client{}
+    // Request as bot to trigger caching
+    req1, _ := http.NewRequest("GET", srv.URL+"/blog/post1", nil)
+    req1.Header.Set("User-Agent", "Googlebot")
+    r1, err := client.Do(req1)
+    if err != nil { t.Fatal(err) }
+    io.ReadAll(r1.Body); r1.Body.Close()
+
+    req2, _ := http.NewRequest("GET", srv.URL+"/products/sku1", nil)
+    req2.Header.Set("User-Agent", "Googlebot")
+    r2, err := client.Do(req2)
+    if err != nil { t.Fatal(err) }
+    io.ReadAll(r2.Body); r2.Body.Close()
+
+    // Check cache files' TTLs
+    p1, _ := cacheFilePathForURL(cfg.CacheDir, strings.TrimRight(cfg.BBaseURL, "/")+"/blog/post1")
+    b1, err := os.ReadFile(p1)
+    if err != nil { t.Fatalf("missing cache file: %v", err) }
+    var c1 cacheEntry
+    if err := json.Unmarshal(b1, &c1); err != nil { t.Fatal(err) }
+    if got := c1.ExpiresAt - c1.CreatedAt; got != 10 {
+        t.Fatalf("blog TTL mismatch: want 10, got %d", got)
+    }
+
+    p2, _ := cacheFilePathForURL(cfg.CacheDir, strings.TrimRight(cfg.BBaseURL, "/")+"/products/sku1")
+    b2, err := os.ReadFile(p2)
+    if err != nil { t.Fatalf("missing cache file 2: %v", err) }
+    var c2 cacheEntry
+    if err := json.Unmarshal(b2, &c2); err != nil { t.Fatal(err) }
+    if got := c2.ExpiresAt - c2.CreatedAt; got != 20 {
+        t.Fatalf("products TTL mismatch: want 20, got %d", got)
+    }
+}
+
+func TestCacheTTLByExtension(t *testing.T) {
+    up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/xml")
+        io.WriteString(w, "<xml>ok</xml>")
+    }))
+    defer up.Close()
+
+    cfg := newTestCfg(t, up.URL)
+    cfg.CacheTTLSeconds = 3600
+    cfg.CacheTTLRules = []TTLRule{
+        {Pattern: "*.xml", TTLSeconds: 5},
+        {Pattern: "*.txt", TTLSeconds: 7},
+    }
+    h := buildHandler(cfg)
+    srv := httptest.NewServer(h)
+    defer srv.Close()
+
+    client := &http.Client{}
+    req1, _ := http.NewRequest("GET", srv.URL+"/deep/path/sitemap.xml", nil)
+    req1.Header.Set("User-Agent", "Googlebot")
+    r1, err := client.Do(req1)
+    if err != nil { t.Fatal(err) }
+    io.ReadAll(r1.Body); r1.Body.Close()
+
+    p1, _ := cacheFilePathForURL(cfg.CacheDir, strings.TrimRight(cfg.BBaseURL, "/")+"/deep/path/sitemap.xml")
+    b1, err := os.ReadFile(p1)
+    if err != nil { t.Fatalf("missing cache file: %v", err) }
+    var c1 cacheEntry
+    if err := json.Unmarshal(b1, &c1); err != nil { t.Fatal(err) }
+    if got := c1.ExpiresAt - c1.CreatedAt; got != 5 {
+        t.Fatalf("xml TTL mismatch: want 5, got %d", got)
+    }
+
+    // Robots txt
+    up2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "text/plain")
+        io.WriteString(w, "User-agent: *\nAllow: /\n")
+    }))
+    defer up2.Close()
+    cfg2 := newTestCfg(t, up2.URL)
+    cfg2.CacheTTLSeconds = 3600
+    cfg2.CacheTTLRules = []TTLRule{{Pattern: "*.txt", TTLSeconds: 7}}
+    h2 := buildHandler(cfg2)
+    srv2 := httptest.NewServer(h2)
+    defer srv2.Close()
+    r, err := http.Get(srv2.URL + "/robots.txt")
+    if err != nil { t.Fatal(err) }
+    io.ReadAll(r.Body); r.Body.Close()
+    p2, _ := cacheFilePathForURL(cfg2.CacheDir, strings.TrimRight(cfg2.BBaseURL, "/")+"/robots.txt")
+    b2, err := os.ReadFile(p2)
+    if err != nil { t.Fatalf("missing cache file robots: %v", err) }
+    var c2 cacheEntry
+    if err := json.Unmarshal(b2, &c2); err != nil { t.Fatal(err) }
+    if got := c2.ExpiresAt - c2.CreatedAt; got != 7 {
+        t.Fatalf("txt TTL mismatch: want 7, got %d", got)
+    }
+}
+
 // helper to safely escape URL for query param without pulling net/url in test imports duplication
 func urlQueryEscape(s string) string {
     // minimal escape for space and others used in tests

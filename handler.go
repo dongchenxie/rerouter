@@ -103,9 +103,12 @@ func buildHandler(cfg *Config) http.Handler {
             if v := resp.Header.Get("ETag"); v != "" { headers["ETag"] = v }
         }
         if resp.StatusCode == http.StatusOK {
-            ce := &cacheEntry{URL: target, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Duration(cfg.CacheTTLSeconds)*time.Second).Unix(), Status: resp.StatusCode, Header: headers, Body: body}
+            ttl := cacheTTLForPath(cfg, "/robots.txt")
+            ce := &cacheEntry{URL: target, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Duration(ttl)*time.Second).Unix(), Status: resp.StatusCode, Header: headers, Body: body}
             if err := writeCacheByURL(cfg.CacheDir, target, ce); err != nil {
                 logger.Warnw("cache_write_error", map[string]interface{}{"err": err.Error(), "url": target, "req_id": getRequestID(r.Context())})
+            } else {
+                logger.Debugw("cache_store", map[string]interface{}{"req_id": getRequestID(r.Context()), "target": target, "ttl_seconds": ttl})
             }
         }
         w.Header().Set("X-Cache", "MISS")
@@ -291,10 +294,11 @@ func buildHandler(cfg *Config) http.Handler {
             }
 
             if resp.StatusCode == http.StatusOK {
+                ttl := cacheTTLForPath(cfg, r.URL.Path)
                 ce := &cacheEntry{
                     URL:       target,
                     CreatedAt: time.Now().Unix(),
-                    ExpiresAt: time.Now().Add(time.Duration(cfg.CacheTTLSeconds) * time.Second).Unix(),
+                    ExpiresAt: time.Now().Add(time.Duration(ttl) * time.Second).Unix(),
                     Status:    resp.StatusCode,
                     Header:    ch,
                     Body:      body,
@@ -302,7 +306,7 @@ func buildHandler(cfg *Config) http.Handler {
                 if err := writeCacheByURL(cfg.CacheDir, target, ce); err != nil {
                     logger.Warnw("cache_write_error", map[string]interface{}{"err": err.Error(), "url": target, "req_id": getRequestID(r.Context())})
                 } else {
-                    logger.Debugw("cache_store", map[string]interface{}{"req_id": getRequestID(r.Context()), "target": target})
+                    logger.Debugw("cache_store", map[string]interface{}{"req_id": getRequestID(r.Context()), "target": target, "ttl_seconds": ttl})
                 }
             }
 

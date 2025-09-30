@@ -42,6 +42,14 @@ type Config struct {
     LogMaxAgeDays int `json:"log_max_age_days"`
     // Interval to log system metrics (seconds). 0 disables.
     MetricsIntervalSeconds int `json:"metrics_interval_seconds"`
+    // Optional per-path TTL rules (evaluated in order). First match wins.
+    CacheTTLRules []TTLRule `json:"cache_ttl_rules"`
+}
+
+// TTLRule defines a TTL for matching request paths.
+type TTLRule struct {
+    Pattern    string `json:"pattern"`
+    TTLSeconds int    `json:"ttl_seconds"`
 }
 
 func getenv(key, def string) string {
@@ -126,6 +134,28 @@ func loadConfig() (*Config, error) {
         fmt.Sscanf(v, "%d", &n)
         if n >= 0 { cfg.LogMaxAgeDays = n }
     }
+    // Parse TTL rules from env: "/blog/*:600,/products/*:1200,/sitemap.xml:86400"
+    if v := os.Getenv("CACHE_TTL_RULES"); v != "" {
+        parts := strings.Split(v, ",")
+        rules := make([]TTLRule, 0, len(parts))
+        for _, p := range parts {
+            p = strings.TrimSpace(p)
+            if p == "" { continue }
+            kv := strings.SplitN(p, ":", 2)
+            if len(kv) != 2 { continue }
+            pat := strings.TrimSpace(kv[0])
+            var ttl int
+            fmt.Sscanf(strings.TrimSpace(kv[1]), "%d", &ttl)
+            if pat != "" && ttl > 0 {
+                // Only prefix "/" for path patterns; allow extension patterns like "*.xml"
+                if !(strings.HasPrefix(pat, "/") || strings.HasPrefix(pat, "*.") || strings.HasPrefix(pat, ".")) {
+                    pat = "/" + pat
+                }
+                rules = append(rules, TTLRule{Pattern: pat, TTLSeconds: ttl})
+            }
+        }
+        if len(rules) > 0 { cfg.CacheTTLRules = rules }
+    }
     if v := os.Getenv("ADMIN_TOKEN"); v != "" {
         cfg.AdminToken = v
     }
@@ -200,4 +230,5 @@ func mergeConfig(dst, src *Config) {
     if src.LogMaxAgeDays != 0 { dst.LogMaxAgeDays = src.LogMaxAgeDays }
     if src.MetricsIntervalSeconds != 0 { dst.MetricsIntervalSeconds = src.MetricsIntervalSeconds }
     if src.AdminUIPath != "" { dst.AdminUIPath = src.AdminUIPath }
+    if len(src.CacheTTLRules) != 0 { dst.CacheTTLRules = src.CacheTTLRules }
 }

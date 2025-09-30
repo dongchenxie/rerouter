@@ -2,11 +2,11 @@ package main
 
 import (
     "io"
-    "log"
     "net/http"
     "net/url"
     "sync"
     "time"
+    "rerouter/logger"
 )
 
 type prefetchJob struct {
@@ -67,7 +67,7 @@ func (p *Prefetcher) handle(job prefetchJob) {
     req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Prefetcher)")
     resp, err := p.client.Do(req)
     if err != nil {
-        log.Printf("prefetch fetch error: %v", err)
+        logger.Warnw("prefetch_fetch_error", map[string]interface{}{"err": err.Error(), "target": job.target})
         return
     }
     defer resp.Body.Close()
@@ -99,17 +99,23 @@ func (p *Prefetcher) handle(job prefetchJob) {
     }
 
     if resp.StatusCode == http.StatusOK {
+        // Determine TTL based on target path
+        ttl := p.cfg.CacheTTLSeconds
+        if u, err := url.Parse(job.target); err == nil {
+            ttl = cacheTTLForPath(p.cfg, u.Path)
+        }
         ce := &cacheEntry{
             URL:       job.target,
             CreatedAt: time.Now().Unix(),
-            ExpiresAt: time.Now().Add(time.Duration(p.cfg.CacheTTLSeconds) * time.Second).Unix(),
+            ExpiresAt: time.Now().Add(time.Duration(ttl) * time.Second).Unix(),
             Status:    resp.StatusCode,
             Header:    ch,
             Body:      body,
         }
         if err := writeCacheByURL(p.cfg.CacheDir, job.target, ce); err != nil {
-            log.Printf("prefetch cache write error: %v", err)
+            logger.Warnw("prefetch_cache_write_error", map[string]interface{}{"err": err.Error(), "target": job.target})
+        } else {
+            logger.Debugw("cache_store", map[string]interface{}{"target": job.target, "ttl_seconds": ttl, "source": "prefetch"})
         }
     }
 }
-
