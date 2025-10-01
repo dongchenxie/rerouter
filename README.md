@@ -45,6 +45,7 @@ Makefile（可选）
 - `CACHE_TTL_SECONDS`：缓存过期秒数，默认 `3600`
 - `CACHE_PATTERNS`：逗号分隔的路径匹配，支持 `*`。当 `CACHE_ALL=false` 时，只有匹配的路径会被缓存。默认 `/sitemap.xml,/blog/*,/products/*`
 - `REDIRECT_STATUS`：真人跳转状态码，默认 `302`（可设为 `307`）
+- `SITEMAP_WARM_DELAY_SECONDS`：Sitemap 预热任务每次抓取之间的等待秒数，默认 `10`，设为 `0` 可关闭节流。
 - `CONFIG_PATH`：可选，JSON 配置文件路径，默认 `./config.json`（示例见 `config.sample.json`）
 - `ADMIN_TOKEN`：管理接口令牌，必须设置后才可使用清缓存接口。
 

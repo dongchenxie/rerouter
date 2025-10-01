@@ -6,5 +6,6 @@
   "cache_ttl_seconds": 3600,
   "cache_all": true,
   "cache_patterns": ["/sitemap.xml", "/blog/*", "/products/*"],
-  "redirect_status": 302
+  "redirect_status": 302,
+  "sitemap_warm_delay_seconds": 10
 }
