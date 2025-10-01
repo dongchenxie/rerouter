@@ -50,7 +50,7 @@ func TestCollectSitemapURLsHandlesIndexAndGzip(t *testing.T) {
 	sitemapBase = srv.URL
 	bHost = srv.URL
 
-	client := newSitemapHTTPClient(0)
+	client := newSitemapHTTPClient(0, defaultUpstreamUserAgent)
 	urls, err := collectSitemapURLs(context.Background(), client, srv.URL+"/index.xml", 10)
 	if err != nil {
 		t.Fatalf("collectSitemapURLs error: %v", err)
@@ -83,7 +83,7 @@ func TestCollectSitemapURLsRespectsLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newSitemapHTTPClient(0)
+	client := newSitemapHTTPClient(0, defaultUpstreamUserAgent)
 	urls, err := collectSitemapURLs(context.Background(), client, srv.URL, 2)
 	if err != nil {
 		t.Fatalf("collectSitemapURLs error: %v", err)

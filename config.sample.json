@@ -1,6 +1,7 @@
 {
   "b_base_url": "https://your-b-site.example.com",
   "a_base_url": "https://your-a-site.example.com",
+  "upstream_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   "listen_addr": ":8080",
   "cache_dir": "./cache",
   "cache_ttl_seconds": 3600,

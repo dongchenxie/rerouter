@@ -126,7 +126,6 @@ func fetchSitemapBody(ctx context.Context, client *http.Client, sitemapURL strin
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "rerouter-sitemap-fetcher/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -181,9 +180,37 @@ func resolveSitemapLocation(baseURL, ref string) (string, error) {
 	return resolved.String(), nil
 }
 
-func newSitemapHTTPClient(timeout time.Duration) *http.Client {
+func newSitemapHTTPClient(timeout time.Duration, userAgent string) *http.Client {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return &http.Client{Timeout: timeout}
+	ua := strings.TrimSpace(userAgent)
+	if ua == "" {
+		ua = defaultUpstreamUserAgent
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &userAgentTransport{userAgent: ua, base: http.DefaultTransport},
+	}
+}
+
+type userAgentTransport struct {
+	userAgent string
+	base      http.RoundTripper
+}
+
+func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if req.Header.Get("User-Agent") != "" {
+		return base.RoundTrip(req)
+	}
+	clone := req.Clone(req.Context())
+	if clone.Header == nil {
+		clone.Header = make(http.Header)
+	}
+	clone.Header.Set("User-Agent", t.userAgent)
+	return base.RoundTrip(clone)
 }

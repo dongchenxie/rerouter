@@ -11,11 +11,15 @@ import (
 	"strings"
 )
 
+const defaultUpstreamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
 type Config struct {
 	// Base URL for B site, e.g. https://b.example.com
 	BBaseURL string `json:"b_base_url"`
 	// Base URL for A site (used for rewriting links in bot-served pages). If empty, derived from request host.
 	ABaseURL string `json:"a_base_url"`
+	// User-Agent header to send when fetching from the B site or other upstreams.
+	UpstreamUserAgent string `json:"upstream_user_agent"`
 	// Address to listen on, e.g. :8080
 	ListenAddr string `json:"listen_addr"`
 	// Cache directory to store files
@@ -65,6 +69,7 @@ func loadConfig() (*Config, error) {
 	cfg := &Config{
 		BBaseURL:                getenv("B_BASE_URL", ""),
 		ABaseURL:                getenv("A_BASE_URL", ""),
+		UpstreamUserAgent:       getenv("UPSTREAM_USER_AGENT", defaultUpstreamUserAgent),
 		ListenAddr:              getenv("LISTEN_ADDR", ":8080"),
 		CacheDir:                getenv("CACHE_DIR", "./cache"),
 		CacheTTLSeconds:         3600,
@@ -209,6 +214,10 @@ func loadConfig() (*Config, error) {
 		cfg.AdminUIPath = "/admin/" + hex.EncodeToString(sum[:])[:48]
 	}
 
+	if strings.TrimSpace(cfg.UpstreamUserAgent) == "" {
+		cfg.UpstreamUserAgent = defaultUpstreamUserAgent
+	}
+
 	if cfg.BBaseURL == "" {
 		return nil, errors.New("B_BASE_URL is required (env or config.json)")
 	}
@@ -232,6 +241,9 @@ func mergeConfig(dst, src *Config) {
 	}
 	if src.ABaseURL != "" {
 		dst.ABaseURL = src.ABaseURL
+	}
+	if src.UpstreamUserAgent != "" {
+		dst.UpstreamUserAgent = src.UpstreamUserAgent
 	}
 	if src.CacheDir != "" {
 		dst.CacheDir = src.CacheDir

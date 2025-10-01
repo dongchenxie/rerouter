@@ -83,8 +83,8 @@ func (p *Prefetcher) handle(job prefetchJob) (bool, error) {
 		logger.Warnw("prefetch_build_request_error", map[string]interface{}{"err": err.Error(), "target": job.target})
 		return false, err
 	}
-	// Use a neutral UA
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Prefetcher)")
+	// Use configured desktop-like UA for upstream requests
+	req.Header.Set("User-Agent", p.cfg.UpstreamUserAgent)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		logger.Warnw("prefetch_fetch_error", map[string]interface{}{"err": err.Error(), "target": job.target})

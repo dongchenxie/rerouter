@@ -70,7 +70,7 @@ func buildHandler(cfg *Config) http.Handler {
 	// Start background prefetcher for human-triggered warming
 	pf := NewPrefetcher(cfg)
 	pf.Start(2)
-	sitemapClient := newSitemapHTTPClient(30 * time.Second)
+	sitemapClient := newSitemapHTTPClient(30*time.Second, cfg.UpstreamUserAgent)
 	warmMgr := newSitemapWarmManager(cfg, pf, sitemapClient)
 	mux := http.NewServeMux()
 
@@ -94,7 +94,7 @@ func buildHandler(cfg *Config) http.Handler {
 			return
 		}
 		req, _ := http.NewRequest(http.MethodGet, target, nil)
-		req.Header.Set("User-Agent", r.UserAgent())
+		req.Header.Set("User-Agent", cfg.UpstreamUserAgent)
 		resp, err := client.Do(req)
 		if err != nil {
 			logger.Errorw("robots_fetch_error", map[string]interface{}{"err": err.Error(), "target": target, "req_id": getRequestID(r.Context())})
@@ -416,7 +416,7 @@ func buildHandler(cfg *Config) http.Handler {
 			// miss or expired: fetch and populate cache
 			req, _ := http.NewRequest(r.Method, target, nil)
 			// Forward minimal headers to appear normal to origin
-			req.Header.Set("User-Agent", r.UserAgent())
+			req.Header.Set("User-Agent", cfg.UpstreamUserAgent)
 			if v := r.Header.Get("Accept"); v != "" {
 				req.Header.Set("Accept", v)
 			}
@@ -491,7 +491,7 @@ func buildHandler(cfg *Config) http.Handler {
 		// Not cached or caching disabled: simple fetch-through for bots
 		req, _ := http.NewRequest(r.Method, target, r.Body)
 		// Since it's a bot path but not cached, just forward as closely as feasible
-		req.Header.Set("User-Agent", r.UserAgent())
+		req.Header.Set("User-Agent", cfg.UpstreamUserAgent)
 		if v := r.Header.Get("Accept"); v != "" {
 			req.Header.Set("Accept", v)
 		}
