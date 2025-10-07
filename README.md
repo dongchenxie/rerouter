@@ -38,6 +38,7 @@ Makefile（可选）
 配置（环境变量优先，亦可用 `config.json`）
 
 - `B_BASE_URL`：B 站根地址（必填），例：`https://b.example.com`
+- `STATIC_REDIRECT_URL`：真人访问先跳到的静态中转页（可选），例：`https://redirect.b.example.com/index.html`；服务端会在其后补上 `?target=<最终地址>`。
 - `A_BASE_URL`：A 站对外域名（用于爬虫页面中的链接重写）。可不填，不填则根据请求的 `Host` 与 `X-Forwarded-Proto` 自动推导。
 - `LISTEN_ADDR`：监听地址，默认 `:8080`
 - `CACHE_DIR`：缓存目录，默认 `./cache`

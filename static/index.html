@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redirecting...</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    main { text-align: center; max-width: 480px; padding: 24px; background: rgba(15, 23, 42, 0.85); border-radius: 12px; box-shadow: 0 24px 48px rgba(15, 23, 42, 0.6); }
+    h1 { font-size: 1.75rem; margin-bottom: 0.75rem; }
+    p { margin: 0.5rem 0 1.25rem; line-height: 1.5; }
+    a { color: #38bdf8; text-decoration: underline; }
+    .spinner { width: 48px; height: 48px; border: 4px solid rgba(255, 255, 255, 0.2); border-top-color: #38bdf8; border-radius: 50%; margin: 0 auto 1.5rem; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>Redirecting you...</h1>
+    <p>Hold on for a second. We are sending you to our main experience.</p>
+    <p>If nothing happens, use this link:</p>
+    <p><a id="fallback-link" href="#">Continue</a></p>
+    <noscript>
+      <p>JavaScript is required for automatic forwarding. Copy this URL to continue: <code id="noscript-target"></code></p>
+    </noscript>
+  </main>
+  <script>
+    (function() {
+      function safeDecode(value) {
+        try { return decodeURIComponent(value); } catch (err) { return value; }
+      }
+      var params = new URLSearchParams(window.location.search);
+      var target = params.get('target');
+      if (target) {
+        target = safeDecode(target);
+        if (/^https?:\/\//i.test(target)) {
+          document.getElementById('fallback-link').href = target;
+          document.getElementById('fallback-link').textContent = 'Continue to destination';
+          var noscriptSlot = document.getElementById('noscript-target');
+          if (noscriptSlot) { noscriptSlot.textContent = target; }
+          window.location.replace(target);
+          return;
+        }
+      }
+      document.querySelector('h1').textContent = 'Unable to redirect automatically';
+      document.querySelector('.spinner').style.display = 'none';
+      document.querySelector('p').textContent = 'We could not detect a valid destination link.';
+      document.getElementById('fallback-link').textContent = 'Back to previous page';
+      document.getElementById('fallback-link').href = 'javascript:history.back()';
+    })();
+  </script>
+</body>
+</html>

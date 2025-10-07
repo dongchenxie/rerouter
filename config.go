@@ -16,6 +16,8 @@ const defaultUpstreamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Appl
 type Config struct {
 	// Base URL for B site, e.g. https://b.example.com
 	BBaseURL string `json:"b_base_url"`
+	// Static HTML URL that performs final hop to B site for human visitors.
+	StaticRedirectURL string `json:"static_redirect_url"`
 	// Base URL for A site (used for rewriting links in bot-served pages). If empty, derived from request host.
 	ABaseURL string `json:"a_base_url"`
 	// User-Agent header to send when fetching from the B site or other upstreams.
@@ -68,6 +70,7 @@ func getenv(key, def string) string {
 func loadConfig() (*Config, error) {
 	cfg := &Config{
 		BBaseURL:                getenv("B_BASE_URL", ""),
+		StaticRedirectURL:       getenv("STATIC_REDIRECT_URL", ""),
 		ABaseURL:                getenv("A_BASE_URL", ""),
 		UpstreamUserAgent:       getenv("UPSTREAM_USER_AGENT", defaultUpstreamUserAgent),
 		ListenAddr:              getenv("LISTEN_ADDR", ":8080"),
@@ -224,6 +227,11 @@ func loadConfig() (*Config, error) {
 	if _, err := url.Parse(cfg.BBaseURL); err != nil {
 		return nil, fmt.Errorf("invalid B_BASE_URL: %w", err)
 	}
+	if cfg.StaticRedirectURL != "" {
+		if _, err := url.Parse(cfg.StaticRedirectURL); err != nil {
+			return nil, fmt.Errorf("invalid STATIC_REDIRECT_URL: %w", err)
+		}
+	}
 	if cfg.ABaseURL != "" {
 		if _, err := url.Parse(cfg.ABaseURL); err != nil {
 			return nil, fmt.Errorf("invalid A_BASE_URL: %w", err)
@@ -235,6 +243,9 @@ func loadConfig() (*Config, error) {
 func mergeConfig(dst, src *Config) {
 	if src.BBaseURL != "" {
 		dst.BBaseURL = src.BBaseURL
+	}
+	if src.StaticRedirectURL != "" {
+		dst.StaticRedirectURL = src.StaticRedirectURL
 	}
 	if src.ListenAddr != "" {
 		dst.ListenAddr = src.ListenAddr

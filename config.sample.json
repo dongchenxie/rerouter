@@ -1,5 +1,6 @@
 {
   "b_base_url": "https://your-b-site.example.com",
+  "static_redirect_url": "https://redirect.your-b-site.example.com/index.html",
   "a_base_url": "https://your-a-site.example.com",
   "upstream_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   "listen_addr": ":8080",

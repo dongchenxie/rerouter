@@ -382,8 +382,24 @@ func buildHandler(cfg *Config) http.Handler {
 			// Warm cache asynchronously (non-blocking)
 			a := deriveABaseURL(cfg, r)
 			pf.Enqueue(target, a.String())
-			logger.Infow("human_redirect", map[string]interface{}{"req_id": getRequestID(r.Context()), "target": target})
-			http.Redirect(w, r, target, cfg.RedirectStatus)
+			redirectURL := target
+			if cfg.StaticRedirectURL != "" {
+				if staticURL, err := url.Parse(cfg.StaticRedirectURL); err == nil {
+					q := staticURL.Query()
+					q.Set("target", target)
+					staticURL.RawQuery = q.Encode()
+					redirectURL = staticURL.String()
+				} else {
+					logger.Warnw("static_redirect_url_invalid", map[string]interface{}{"req_id": getRequestID(r.Context()), "url": cfg.StaticRedirectURL, "err": err.Error()})
+				}
+			}
+			logger.Infow("human_redirect", map[string]interface{}{
+				"req_id":        getRequestID(r.Context()),
+				"target":        target,
+				"redirect_url":  redirectURL,
+				"static_bridge": cfg.StaticRedirectURL != "",
+			})
+			http.Redirect(w, r, redirectURL, cfg.RedirectStatus)
 			return
 		}
 
