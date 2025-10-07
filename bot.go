@@ -66,7 +66,7 @@ func isBot(r *http.Request) bool {
         "lighthouse", "pagespeed", "ptst", "gtmetrix", "speedcurve", "pingdom",
         "siteimprove", "w3c_validator", "validator",
         // Headless browsers commonly used for crawling
-        "headlesschrome", "phantomjs", "puppeteer", "rendertron", "prerender",
+        "headlesschrome", "phantomjs", "puppeteer", "rendertron", "prerender","lighthouse"
         // AI crawlers
         "gptbot", "oai-searchbot", "perplexitybot", "claudebot", "claude-web",
         "amazonbot",

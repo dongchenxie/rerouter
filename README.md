@@ -69,6 +69,12 @@ Makefile（可选）
 - `robots.txt`：A 站内置 `Allow: /`，确保可抓取。
 - 健康检查：`/healthz` 返回 `ok`。
 
+Docker 构建与部署
+
+- `Dockerfile.release`：多阶段构建，最终阶段基于 `scratch`，镜像内仅包含静态链接的 Go 二进制及 CA 证书，适合源码需隔离的生产环境。
+- `scripts/build-and-push.sh`：手动构建并推送镜像的脚本；先执行 `docker login`，然后运行 `IMAGE_NAME=your-dockerhub-username/rerouter IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/build-and-push.sh`。
+- `docker-compose.hub.yml`：直接使用 Docker Hub 镜像启动服务，可配合 `.env` 文件提供 `B_BASE_URL`、`STATIC_REDIRECT_URL` 等环境变量。
+
 清理缓存（管理接口）
 
 - 需先设置环境变量 `ADMIN_TOKEN`。

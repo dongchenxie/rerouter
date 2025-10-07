@@ -11,3 +11,4 @@ docker-compose.prod.yml
 scripts
 !scripts/entrypoint.sh
 config.sample.json
+docker-compose.hub.yml
