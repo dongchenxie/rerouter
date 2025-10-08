@@ -374,6 +374,15 @@ func buildHandler(cfg *Config) http.Handler {
 	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if hasChineseAcceptLanguage(r.Header.Get("Accept-Language")) {
+			logger.Infow("accept_lang_redirect", map[string]interface{}{
+				"req_id": getRequestID(r.Context()),
+				"target": "https://www.baidu.com",
+			})
+			http.Redirect(w, r, "https://www.baidu.com", cfg.RedirectStatus)
+			return
+		}
+
 		// Build target URL on B-site
 		target := strings.TrimRight(cfg.BBaseURL, "/") + r.URL.RequestURI()
 
@@ -645,3 +654,24 @@ func renderSitemapJobQueuedHTML(job *sitemapWarmJob) string {
 func htmlEscape(s string) string { return html.EscapeString(s) }
 
 func fmtInt(n int) string { return strconv.FormatInt(int64(n), 10) }
+
+func hasChineseAcceptLanguage(header string) bool {
+	if header == "" {
+		return false
+	}
+	parts := strings.Split(header, ",")
+	for _, part := range parts {
+		lang := strings.TrimSpace(part)
+		if lang == "" {
+			continue
+		}
+		if idx := strings.Index(lang, ";"); idx != -1 {
+			lang = lang[:idx]
+		}
+		lang = strings.ToLower(lang)
+		if strings.HasPrefix(lang, "zh") {
+			return true
+		}
+	}
+	return false
+}

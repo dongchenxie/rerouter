@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_NAME=${IMAGE_NAME:-463052811/go-rerouter}
+IMAGE_NAME=${IMAGE_NAME:-jamesdtap/rerouter}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 DOCKERFILE=${DOCKERFILE:-Dockerfile.release}
 CONTEXT_DIR=${CONTEXT_DIR:-.}
