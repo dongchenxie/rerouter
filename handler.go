@@ -580,7 +580,7 @@ func adminUIHTML() string {
     h2{margin-top:2rem}
     form{max-width:640px;padding:1rem;margin-top:1rem;border:1px solid #ddd;border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.08)}
     label{display:block;margin:.5rem 0 .25rem;font-weight:600;color:#333}
-    input[type=text],input[type=password],input[type=number]{width:100%;padding:.5rem;border:1px solid #bbb;border-radius:6px;font:inherit}
+    input[type=text],input[type=password],input[type=number]{width:100%;border:1px solid #bbb;border-radius:6px;font:inherit}
     .row{display:flex;gap:1rem;align-items:center;margin-top:.5rem}
     .hint{color:#555;font-size:.95rem;margin-bottom:.5rem}
     button{margin-top:1rem;padding:.6rem 1.2rem;border:0;border-radius:6px;background:#0b5;color:#fff;cursor:pointer;font-weight:600}
